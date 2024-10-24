@@ -150,7 +150,9 @@ class WebUI:
         self.pipe = PipelineParams(self.parser)
 
         #idm vton garment image
-        self.garm_img = Image.open("./dataset/garment/hood.jpg")#임시 하드코딩 
+        self.garm_img_front = Image.open("./dataset/garment/hood.jpg")#임시 하드코딩 
+        self.garm_img_back = Image.open("./dataset/garment/hood.jpg")#임시 하드코딩 
+
 
 
         # status
@@ -520,7 +522,7 @@ class WebUI:
                 self.add(self.camera)
             else:
                 self.edit_frame_show.visible = True
-
+                print('self.edit_cam_num.value', self.edit_cam_num.value)
                 edit_cameras, train_frames, train_frustums = ui_utils.sample_train_camera(self.colmap_cameras,
                                                                                           self.edit_cam_num.value,
                                                                                           self.server)
@@ -1179,7 +1181,8 @@ class WebUI:
         origin_frames = self.render_cameras_list(edit_cameras)
         self.guidance = EditGuidance(
             #guidance=cur_2D_guidance,
-            garm_img = self.garm_img,
+            garm_img_front= self.garm_img_front,
+            garm_img_back= self.garm_img_back,
             gaussian=self.gaussian,
             origin_frames=origin_frames,
             text_prompt=self.edit_text.value,
