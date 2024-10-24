@@ -123,16 +123,20 @@ pipe = TryonPipeline.from_pretrained(
 )
 pipe.unet_encoder = UNet_Encoder
 
-def start_tryon(img,garm_img,garment_des,is_checked,is_checked_crop,denoise_steps,seed):
+#garm_img_front -> 의상 앞면사진, garm_img_back ->의상 뒷면사진
+def start_tryon(img,garm_img_front, garm_img_back,garment_des,is_checked,is_checked_crop,denoise_steps,seed):
     
+
     openpose_model.preprocessor.body_estimation.model.to(device)
     pipe.to(device)
     pipe.unet_encoder.to(device)
 
-    garm_img= garm_img.convert("RGB").resize((768,1024))
+    #garm_img= garm_img.convert("RGB").resize((768,1024))
     #garm_img= garm_img.convert("RGB").resize((384,512))
     human_img_orig = img.convert("RGB")    
-    
+   
+
+    #(human_img)이미지가 망가지지 않게 crop하는거 무조건 해주는게 좋음.
     if is_checked_crop:
         width, height = human_img_orig.size
         target_width = int(min(width, height * (3 / 4)))
@@ -149,18 +153,29 @@ def start_tryon(img,garm_img,garment_des,is_checked,is_checked_crop,denoise_step
         human_img = human_img_orig.resize((768,1024))
         #human_img = human_img_orig.resize((384,512))
 
-    if is_checked:
+    #is_checked가 true면 segmentation이 실행됨.
+    #근데 false면 원본 이미지를 사용해서 마스크를 생성함.
+    if is_checked:#segmentation!
         keypoints = openpose_model(human_img.resize((384,512)))
-        model_parse, _ = parsing_model(human_img.resize((384,512)))
-        mask, mask_gray = get_mask_location('hd', "upper_body", model_parse, keypoints)
-        mask = mask.resize((768,1024))
-        #mask = mask.resize((384,512))
-    
-    #else: is_checked ==true : mask auto generate
+        if keypoints:
+            model_parse, face_mask = parsing_model(human_img.resize((384,512)))
+            #model_parse, face_mask = parsing_model(human_img.resize((384,512))) -> 이렇게 하면 face_mask가 None일때 뒷모습이니까 뒷모습 다르게 적용할 수 있다고 생각..!?
+            #이부분 uppper_body면 상의만 mask씌우는거 같은데 하의는 어떻게..?
 
-        #mask = pil_to_binary_mask(dict['layers'][0].convert("RGB").resize((768, 1024)))
-        
-        #mask = pil_to_binary_mask(dict['layers'][0].convert("RGB").resize((384,512)))
+            #여기서 face_mask가 None이면 뒷판
+            if face_mask == None:
+                garm_img= garm_img_back.convert("RGB").resize((768,1024))
+
+            else:
+                garm_img= garm_img_front.convert("RGB").resize((768,1024))
+
+            #hd -> 팔폭설정하는거, "lower_body"이렇게 하면 하의 근데 "dress"는 드레스로 상하의해서 한벌일때, keypoints 는 포즈데이터
+            mask, mask_gray = get_mask_location('hd', "upper_body", model_parse, keypoints)
+            mask = mask.resize((768,1024))
+        else:#custom masking with sam
+            mask=pil_to_binary_mask(human_img_orig.resize((768, 1024)))#임시 처리 ->사용자가 직접 그려서 segmentation하는거
+    else:
+        mask = pil_to_binary_mask(human_img_orig.resize((768, 1024)))  #사용자가 직접 그려서 segmentation하는거
         # mask = transforms.ToTensor()(mask)
         # mask = mask.unsqueeze(0)
     mask_gray = (1-transforms.ToTensor()(mask)) * tensor_transfrom(human_img)
