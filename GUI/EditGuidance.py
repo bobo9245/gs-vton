@@ -7,7 +7,7 @@ from threestudio.models.prompt_processors.stable_diffusion_prompt_processor impo
 from torchvision import transforms
 
 from idmvton.gradio_demo.app import start_tryon
-
+import matplotlib.pyplot as plt
 
 
 
@@ -15,12 +15,13 @@ from idmvton.gradio_demo.app import start_tryon
 # Diffusion model (cached) + prompts + edited_frames + training config
 
 class EditGuidance:#기존에 있던 guidance매개변수삭제하고 idm-vton함수를 직접 호출
-    def __init__(self, garm_img, gaussian, origin_frames, text_prompt, per_editing_step, edit_begin_step,
+    def __init__(self, garm_img_front, garm_img_back, gaussian, origin_frames, text_prompt, per_editing_step, edit_begin_step,
                  edit_until_step, lambda_l1, lambda_p, lambda_anchor_color, lambda_anchor_geo, lambda_anchor_scale,
                  lambda_anchor_opacity, train_frames, train_frustums, cams, server
                  ):
         # self.guidance = guidance
-        self.garm_img = garm_img
+        self.garm_img_front = garm_img_front
+        self.garm_img_back = garm_img_back
         self.gaussian = gaussian
         self.per_editing_step = per_editing_step
         self.edit_begin_step = edit_begin_step
@@ -69,17 +70,33 @@ class EditGuidance:#기존에 있던 guidance매개변수삭제하고 idm-vton�
             #print("self.origin_frames[view_index]", len(self.origin_frames[view_index]))
             #print("self.garm_img", self.garm_img)
             to_pil = transforms.ToPILImage()
+
             rgb =to_pil(self.origin_frames[view_index].squeeze(0).permute(2, 0, 1))
-            print("rgb.size ", rgb.size )
-            result, masked_img = start_tryon(rgb,self.garm_img,self.text_prompt, True, True, 20, 42)#이 부분을 미리 수행해서 gpu memory out을 방지하자!
-            self.edit_frames[view_index] = result["edit_images"].detach().clone() # 1 H W C
+
+            print("view_index", view_index )
+            
+            #rgb.show()
+
+            #input()
+
+            
+            
+            result, masked_img = start_tryon(rgb,self.garm_img_front, self.garm_img_back, self.text_prompt, False, True, 20, 42)#이 부분을 미리 수행해서 gpu memory out을 방지하자!
+            result = transforms.ToTensor()(result)
+            result = result.permute(1, 2, 0).unsqueeze(0)
+            #self.edit_frames[view_index] = result["edit_images"].detach().clone() # 1 H W C
+            self.edit_frames[view_index] = result.detach().clone() # 1 H W C
             self.train_frustums[view_index].remove()
             self.train_frustums[view_index] = ui_utils.new_frustums(view_index, self.train_frames[view_index],
                                                                     self.cams[view_index], self.edit_frames[view_index], self.visible, self.server)
             # print("edited image index", cur_index)
 
         gt_image = self.edit_frames[view_index]
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+        # rendering과 gt_image를 같은 디바이스로 이동
+        rendering = rendering.to(device)
+        gt_image = gt_image.to(device)
         loss = self.lambda_l1 * torch.nn.functional.l1_loss(rendering, gt_image) + \
                self.lambda_p * self.perceptual_loss(rendering.permute(0, 3, 1, 2).contiguous(),
                                                     gt_image.permute(0, 3, 1, 2).contiguous(), ).sum()
